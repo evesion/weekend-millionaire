@@ -189,6 +189,12 @@
       <button class="ll-btn ll-expert" id="ll-expert" onclick="gmAction('lifeline',{type:'expert'})">📞 Expert</button>
       <div class="sep"></div>
       <div class="answered-count" id="answeredCount"></div>
+      <!-- Slide navigation — visible in presentation mode only -->
+      <div class="sep" id="slideSep" style="display:none"></div>
+      <button class="btn btn-secondary" id="btnSlidePrev" style="display:none" onclick="slideNav(-1)">◀</button>
+      <div class="answered-count" id="slideInfo" style="display:none"></div>
+      <button class="btn btn-secondary" id="btnSlideNext" style="display:none" onclick="slideNav(1)">▶ Slide</button>
+      <a href="/present" target="_blank" class="btn btn-secondary" id="btnPresenter" style="display:none;text-decoration:none">📺 Projector</a>
     </div>
 
     <!-- Content area -->
@@ -200,7 +206,7 @@
           <div style="font-size:48px">🎮</div>
           <h2>Ready to train?</h2>
           <p>Players join at your server URL by entering their name.<br/>When everyone has joined, press Start Game.</p>
-          <p style="color:#555;font-size:12px">GM Dashboard — /gm | Player URL — /</p>
+          <p style="color:#555;font-size:12px">GM Dashboard — /gm | Players — / | Projector — /present</p>
           <button class="btn btn-primary big-start" id="lobbyStartBtn" onclick="gmAction('start')" disabled>▶ START GAME</button>
         </div>
       </div>
@@ -265,6 +271,27 @@ function renderGM(d) {
   updatePlayers(d);
   updateQuestion(d);
   updateLadder(d);
+  updateSlideNav(d);
+}
+
+function updateSlideNav(d) {
+  const show = d.phase === 'presentation';
+  ['slideSep','btnSlidePrev','slideInfo','btnSlideNext','btnPresenter'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = show ? '' : 'none';
+  });
+  if (show) {
+    const si = d.presentSlide || 0;
+    const total = d.slideCount || 25;
+    document.getElementById('slideInfo').innerHTML = `Slide <b>${si + 1}</b>/${total}`;
+    document.getElementById('btnSlidePrev').disabled = si === 0;
+    document.getElementById('btnSlideNext').disabled = si >= total - 1;
+  }
+}
+
+function slideNav(delta) {
+  const si = (gmData.presentSlide || 0) + delta;
+  gmAction('slide_nav', { index: Math.max(0, si) });
 }
 
 function updateTopbar(d) {

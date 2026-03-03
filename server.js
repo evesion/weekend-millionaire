@@ -9,6 +9,7 @@ const io = new Server(server, { cors: { origin: '*' } });
 
 app.use(express.static(path.join(__dirname, 'public')));
 app.get('/gm', (req, res) => res.sendFile(path.join(__dirname, 'public', 'gm.html')));
+app.get('/present', (req, res) => res.sendFile(path.join(__dirname, 'public', 'present.html')));
 
 // ─── QUESTIONS ───────────────────────────────────────────────────────────────
 const QUESTIONS = [
@@ -127,6 +128,8 @@ const QUESTIONS = [
 const PRIZES = QUESTIONS.map(q => q.prize);
 
 // ─── GAME STATE ───────────────────────────────────────────────────────────────
+const SLIDE_COUNT = 25;
+
 function createState() {
   return {
     phase: 'lobby',        // lobby | presentation | question | revealed | gameover
@@ -134,6 +137,7 @@ function createState() {
     players: {},           // name -> { name, socketId, connected, eliminated, answers[] }
     lifelines: { fifty: false, team: false, expert: false },
     eliminatedAnswers: [],
+    presentSlide: 0,
   };
 }
 
@@ -188,6 +192,8 @@ function gmStateData() {
     prizes: PRIZES,
     lifelines: G.lifelines,
     eliminatedAnswers: G.eliminatedAnswers,
+    presentSlide: G.presentSlide,
+    slideCount: SLIDE_COUNT,
     players: Object.values(G.players).map(p => ({
       name: p.name,
       connected: p.connected,
@@ -227,6 +233,19 @@ io.on('connection', socket => {
   socket.on('gm_connect', () => {
     socket.join('gm');
     socket.emit('gm_state', gmStateData());
+  });
+
+  // ── PRESENT SCREEN ──
+  socket.on('present_connect', () => {
+    socket.join('present');
+    socket.emit('slide', { index: G.presentSlide, total: SLIDE_COUNT });
+  });
+
+  socket.on('present_nav', ({ index }) => {
+    if (!socket.rooms.has('present')) return;
+    G.presentSlide = Math.max(0, Math.min(SLIDE_COUNT - 1, index));
+    io.to('present').emit('slide', { index: G.presentSlide, total: SLIDE_COUNT });
+    broadcastGM();
   });
 
   // ── PLAYER JOIN ──
@@ -316,9 +335,18 @@ io.on('connection', socket => {
       }
       broadcastPlayers(); broadcastGM();
 
+    } else if (action === 'slide_nav') {
+      const { index } = payload;
+      if (typeof index === 'number') {
+        G.presentSlide = Math.max(0, Math.min(SLIDE_COUNT - 1, index));
+        io.to('present').emit('slide', { index: G.presentSlide, total: SLIDE_COUNT });
+        broadcastGM();
+      }
+
     } else if (action === 'reset') {
       G = createState();
       io.emit('reset');
+      io.to('present').emit('slide', { index: 0, total: SLIDE_COUNT });
       broadcastGM();
 
     } else if (action === 'kick') {
