@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0"/>
+<title>Weekend Millionaire — Dynarisk</title>
+<script src="/socket.io/socket.io.js"></script>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  :root{
+    --gold:#f5c518;--gold2:#e8a000;--bg:#05051a;--card:rgba(255,255,255,0.05);
+    --border:rgba(255,255,255,0.12);--text:#e8e8e8;--dim:#888;
+  }
+  html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--text);font-family:'Segoe UI',Arial,sans-serif}
+  body{display:flex;flex-direction:column;background:radial-gradient(ellipse at 50% 0%,#0d0d35 0%,#05051a 70%)}
+
+  /* SCREENS */
+  .screen{display:none;height:100%;flex-direction:column;align-items:center;justify-content:center;padding:20px;animation:fadeIn .3s ease}
+  .screen.active{display:flex}
+  @keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+
+  /* LOGO */
+  .logo{font-size:clamp(20px,5vw,32px);font-weight:900;letter-spacing:2px;
+    background:linear-gradient(135deg,var(--gold),#ff9500,var(--gold));
+    -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
+    text-align:center;line-height:1.2}
+  .logo-sub{color:var(--dim);font-size:12px;letter-spacing:3px;text-transform:uppercase;text-align:center;margin-top:4px}
+
+  /* JOIN SCREEN */
+  #s-lobby{gap:24px}
+  .join-card{background:var(--card);border:1px solid var(--border);border-radius:20px;padding:28px 24px;width:100%;max-width:360px;display:flex;flex-direction:column;gap:16px}
+  .join-card label{color:var(--dim);font-size:13px;letter-spacing:1px;text-transform:uppercase}
+  .join-card input{background:rgba(255,255,255,0.08);border:1px solid var(--border);border-radius:12px;
+    padding:14px 16px;font-size:18px;color:#fff;width:100%;outline:none;transition:.2s}
+  .join-card input:focus{border-color:var(--gold);background:rgba(245,197,24,0.08)}
+  .btn-gold{background:linear-gradient(135deg,var(--gold),var(--gold2));border:none;border-radius:50px;
+    padding:14px 32px;font-size:17px;font-weight:700;color:#000;cursor:pointer;width:100%;
+    box-shadow:0 0 24px rgba(245,197,24,0.3);transition:.2s;letter-spacing:.5px}
+  .btn-gold:active{transform:scale(0.98)}
+  .error-msg{color:#ff6b6b;font-size:13px;text-align:center;min-height:18px}
+
+  /* WAITING SCREEN */
+  #s-waiting{gap:20px;text-align:center}
+  .waiting-icon{font-size:64px;animation:pulse 2s ease-in-out infinite}
+  @keyframes pulse{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.08);opacity:.85}}
+  .waiting-title{font-size:22px;font-weight:700;color:#fff}
+  .waiting-sub{color:var(--dim);font-size:15px;line-height:1.6;max-width:280px}
+  .player-name-tag{background:linear-gradient(135deg,rgba(245,197,24,0.15),rgba(245,197,24,0.05));
+    border:1px solid rgba(245,197,24,0.4);border-radius:50px;padding:8px 20px;
+    color:var(--gold);font-weight:700;font-size:15px}
+  .eliminated-badge{background:rgba(255,107,107,0.15);border:1px solid rgba(255,107,107,0.4);
+    border-radius:50px;padding:6px 16px;color:#ff9999;font-size:13px;margin-top:8px}
+
+  /* QUESTION SCREEN */
+  #s-question{justify-content:flex-start;padding:16px;gap:0;overflow-y:auto}
+  .q-header{width:100%;display:flex;justify-content:space-between;align-items:center;
+    margin-bottom:12px;flex-shrink:0}
+  .q-num{color:var(--dim);font-size:12px;letter-spacing:2px;text-transform:uppercase}
+  .q-difficulty{color:var(--gold);font-size:12px;font-weight:600}
+  .prize-badge{text-align:center;margin-bottom:14px;flex-shrink:0}
+  .prize-badge span{background:linear-gradient(135deg,rgba(245,197,24,0.18),rgba(245,197,24,0.06));
+    border:1px solid rgba(245,197,24,0.5);border-radius:50px;padding:6px 24px;
+    color:var(--gold);font-weight:900;font-size:20px;letter-spacing:1px}
+  .q-box{background:var(--card);border:1px solid var(--border);border-radius:16px;
+    padding:20px;margin-bottom:16px;flex-shrink:0}
+  .q-text{color:#fff;font-size:clamp(14px,3.8vw,17px);font-weight:600;line-height:1.6;text-align:center}
+  .answers{display:flex;flex-direction:column;gap:10px;flex-shrink:0}
+  .ans-btn{background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:12px;
+    padding:14px 16px;display:flex;align-items:center;gap:12px;cursor:pointer;
+    transition:all .2s;user-select:none;width:100%;text-align:left}
+  .ans-btn:active:not(.disabled){transform:scale(0.99)}
+  .ans-btn.disabled{opacity:.25;cursor:default;pointer-events:none}
+  .ans-btn.selected{background:linear-gradient(135deg,rgba(30,80,160,0.5),rgba(41,128,185,0.4));
+    border-color:#4da6ff;color:#fff}
+  .ans-btn.locked{background:linear-gradient(135deg,rgba(30,80,160,0.5),rgba(41,128,185,0.4));
+    border-color:#4da6ff;opacity:1!important}
+  .ans-btn.correct{background:linear-gradient(135deg,rgba(26,107,42,0.7),rgba(39,168,68,0.6));
+    border-color:#4dff80!important;color:#fff!important}
+  .ans-btn.wrong{background:linear-gradient(135deg,rgba(140,27,27,0.7),rgba(192,57,43,0.6));
+    border-color:#ff4444!important;color:#fff!important}
+  .ans-letter{width:30px;height:30px;border-radius:50%;flex-shrink:0;
+    background:rgba(245,197,24,0.15);border:1px solid rgba(245,197,24,0.4);
+    display:flex;align-items:center;justify-content:center;font-weight:700;
+    color:var(--gold);font-size:13px}
+  .ans-text{font-size:clamp(13px,3.2vw,15px);line-height:1.4;color:var(--text)}
+  .locked-msg{text-align:center;color:var(--gold);font-size:13px;font-weight:600;
+    margin-top:12px;padding:10px;background:rgba(245,197,24,0.08);
+    border:1px solid rgba(245,197,24,0.2);border-radius:10px;flex-shrink:0}
+  .explanation-box{background:rgba(255,255,255,0.04);border:1px solid var(--border);
+    border-radius:12px;padding:16px;margin-top:12px;flex-shrink:0}
+  .explanation-box p{font-size:13px;line-height:1.7;color:#ccc}
+  .result-correct{color:#4dff80;font-weight:700;margin-bottom:6px;font-size:15px}
+  .result-wrong{color:#ff6b6b;font-weight:700;margin-bottom:6px;font-size:15px}
+  .lifeline-strip{display:flex;gap:8px;justify-content:center;margin-bottom:14px;flex-wrap:wrap;flex-shrink:0}
+  .ll-pill{border-radius:50px;padding:5px 14px;font-size:12px;font-weight:600;
+    background:rgba(245,197,24,0.08);border:1px solid rgba(245,197,24,0.3);color:var(--gold)}
+  .ll-pill.used{text-decoration:line-through;opacity:.3;background:none}
+
+  /* GAMEOVER SCREEN */
+  #s-gameover{gap:20px;text-align:center}
+  .go-icon{font-size:72px}
+  .go-title{font-size:clamp(26px,6vw,42px);font-weight:900}
+  .go-title.won{color:#4dff80}
+  .go-title.elim{color:#ff9999}
+  .go-prize{font-size:clamp(32px,8vw,52px);font-weight:900;color:var(--gold)}
+  .go-msg{color:var(--dim);font-size:15px;max-width:300px;line-height:1.7}
+
+  /* PRIZE LADDER (side) - hidden on very small screens */
+  .prize-ladder{position:fixed;right:0;top:0;height:100%;width:90px;
+    background:rgba(0,0,0,0.4);border-left:1px solid rgba(255,255,255,0.06);
+    display:flex;flex-direction:column;justify-content:center;padding:8px 6px;
+    overflow:hidden;z-index:10}
+  .prize-ladder.hidden{display:none}
+  .pl-item{font-size:10px;padding:3px 6px;border-radius:4px;display:flex;justify-content:space-between;
+    color:#555;border:1px solid transparent;margin-bottom:2px;transition:.3s}
+  .pl-item.current{color:#000;background:linear-gradient(90deg,var(--gold),var(--gold2));font-weight:700;border-color:var(--gold)}
+  .pl-item.done{color:rgba(245,197,24,0.5)}
+  .pl-item.safe{color:rgba(77,255,128,0.6);border-color:rgba(77,255,128,0.15)}
+  @media(max-width:380px){.prize-ladder{display:none}}
+  .has-ladder #s-question{padding-right:98px}
+  .has-ladder #s-waiting, .has-ladder #s-lobby{padding-right:16px}
+</style>
+</head>
+<body>
+
+<!-- LOBBY -->
+<div id="s-lobby" class="screen active">
+  <div class="logo">WEEKEND MILLIONAIRE</div>
+  <div class="logo-sub">Dynarisk Training Edition</div>
+  <div class="join-card">
+    <label>Your Name</label>
+    <input id="nameInput" type="text" placeholder="Enter your name" maxlength="25" autocomplete="off"/>
+    <button class="btn-gold" onclick="joinGame()">JOIN GAME →</button>
+    <div class="error-msg" id="joinErr"></div>
+  </div>
+</div>
+
+<!-- WAITING -->
+<div id="s-waiting" class="screen">
+  <div class="waiting-icon">🎬</div>
+  <div class="player-name-tag" id="myNameTag">Player</div>
+  <div id="elimBadge" style="display:none" class="eliminated-badge">⚠️ You've been eliminated — keep playing!</div>
+  <div class="waiting-title">Training in progress...</div>
+  <div class="waiting-sub">Your trainer is presenting. A new question is coming soon!</div>
+</div>
+
+<!-- QUESTION -->
+<div id="s-question" class="screen">
+  <div class="q-header">
+    <span class="q-num" id="qNum">Question 1/10</span>
+    <span class="q-difficulty" id="qDiff">Warm-Up</span>
+  </div>
+  <div class="prize-badge"><span id="qPrize">£100</span></div>
+  <div class="lifeline-strip" id="lifelineStrip"></div>
+  <div class="q-box">
+    <div class="q-text" id="qText"></div>
+  </div>
+  <div class="answers" id="answers"></div>
+  <div id="lockedMsg" class="locked-msg" style="display:none">⏳ Answer locked in — waiting for results...</div>
+  <div id="explanationBox" class="explanation-box" style="display:none">
+    <div id="resultLabel"></div>
+    <p id="explanationText"></p>
+  </div>
+</div>
+
+<!-- GAME OVER -->
+<div id="s-gameover" class="screen">
+  <div class="go-icon" id="goIcon">🏆</div>
+  <div class="go-title" id="goTitle">Game Over!</div>
+  <div id="goPrize" class="go-prize" style="display:none"></div>
+  <div class="go-msg" id="goMsg"></div>
+</div>
+
+<!-- PRIZE LADDER -->
+<div class="prize-ladder hidden" id="prizeLadder"></div>
+
+<script>
+const socket = io();
+const LETTERS = ['A','B','C','D'];
+let myName = null;
+let myState = {};
+let answered = false;
+
+// ── Screens ──
+function show(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+
+// ── Join ──
+function joinGame() {
+  const name = document.getElementById('nameInput').value.trim();
+  if (!name) { setErr('Please enter your name.'); return; }
+  setErr('');
+  socket.emit('join', { name });
+}
+document.getElementById('nameInput').addEventListener('keypress', e => { if (e.key === 'Enter') joinGame(); });
+
+function setErr(msg) { document.getElementById('joinErr').textContent = msg; }
+
+socket.on('join_error', msg => setErr(msg));
+socket.on('joined', ({ name }) => {
+  myName = name;
+  document.querySelectorAll('.myName').forEach(el => el.textContent = name);
+  document.getElementById('myNameTag').textContent = '👤 ' + name;
+});
+
+// ── State ──
+socket.on('state', s => {
+  myState = s;
+  renderState(s);
+});
+
+socket.on('reset', () => {
+  myName = null; myState = {}; answered = false;
+  document.getElementById('nameInput').value = '';
+  setErr('');
+  show('s-lobby');
+  document.getElementById('prizeLadder').classList.add('hidden');
+  document.body.classList.remove('has-ladder');
+});
+
+function renderState(s) {
+  // Update elim badge on waiting screen
+  document.getElementById('elimBadge').style.display = s.myEliminated ? 'block' : 'none';
+
+  if (s.phase === 'lobby') {
+    show('s-lobby');
+    document.getElementById('prizeLadder').classList.add('hidden');
+    document.body.classList.remove('has-ladder');
+    return;
+  }
+
+  // Prize ladder
+  renderLadder(s);
+
+  if (s.phase === 'presentation') {
+    show('s-waiting');
+    return;
+  }
+
+  if (s.phase === 'gameover') {
+    renderGameOver(s);
+    return;
+  }
+
+  if (s.phase === 'question' || s.phase === 'revealed') {
+    renderQuestion(s);
+    return;
+  }
+}
+
+function renderLadder(s) {
+  const ladder = document.getElementById('prizeLadder');
+  const prizes = s.prizes;
+  if (!prizes) return;
+  ladder.classList.remove('hidden');
+  document.body.classList.add('has-ladder');
+  const rev = [...prizes].reverse();
+  const qi = s.questionIndex;
+  ladder.innerHTML = rev.map((p, i) => {
+    const qn = prizes.length - i; // 1-indexed
+    const isCurrent = qn === qi + 1;
+    const isDone = qn <= qi;
+    const isSafe = qn === 5;
+    let cls = 'pl-item';
+    if (isCurrent) cls += ' current';
+    else if (isDone) cls += ' done';
+    else if (isSafe) cls += ' safe';
+    return `<div class="${cls}"><span>${qn}</span><span>${p}</span></div>`;
+  }).join('');
+}
+
+function renderQuestion(s) {
+  show('s-question');
+  const q = s.question;
+  if (!q) return;
+
+  document.getElementById('qNum').textContent = `Q${s.questionIndex + 1}/${s.totalQuestions}`;
+  document.getElementById('qDiff').textContent = q.difficulty;
+  document.getElementById('qPrize').textContent = q.prize;
+  document.getElementById('qText').textContent = q.question;
+
+  // Lifelines
+  const ls = s.lifelines;
+  document.getElementById('lifelineStrip').innerHTML = [
+    { k:'fifty', label:'½ 50/50' },
+    { k:'team', label:'👥 Ask Team' },
+    { k:'expert', label:'📞 Expert' },
+  ].map(({ k, label }) =>
+    `<div class="ll-pill ${ls[k] ? 'used' : ''}">${label}</div>`
+  ).join('');
+
+  // Answers
+  const isRevealed = s.phase === 'revealed';
+  const myAns = s.myAnswer;
+  const hasAnswered = myAns !== undefined;
+  const correctIdx = q.correctIndex;
+
+  document.getElementById('answers').innerHTML = q.answers.map(a => {
+    const i = a.index;
+    const isElim = s.eliminatedAnswers.includes(i);
+    const isMyAns = myAns === i;
+    let cls = 'ans-btn';
+    if (isElim) { cls += ' disabled'; }
+    else if (isRevealed) {
+      if (i === correctIdx) cls += ' correct';
+      else if (isMyAns) cls += ' wrong';
+    } else if (isMyAns) {
+      cls += ' locked';
+    } else if (hasAnswered) {
+      cls += ' disabled';
+    }
+    return `<div class="${cls}" onclick="selectAnswer(${i})">
+      <div class="ans-letter">${LETTERS[i]}</div>
+      <div class="ans-text">${a.text}</div>
+    </div>`;
+  }).join('');
+
+  // Locked msg
+  const lockedMsg = document.getElementById('lockedMsg');
+  lockedMsg.style.display = (hasAnswered && !isRevealed) ? 'block' : 'none';
+
+  // Explanation
+  const exBox = document.getElementById('explanationBox');
+  if (isRevealed && q.explanation) {
+    exBox.style.display = 'block';
+    const gotIt = myAns === correctIdx;
+    document.getElementById('resultLabel').innerHTML =
+      myAns === undefined
+        ? '<span style="color:#aaa;font-weight:700">⏭ You didn\'t answer in time.</span>'
+        : gotIt
+        ? '<span class="result-correct">✅ Correct!</span>'
+        : '<span class="result-wrong">❌ Not quite.</span>';
+    document.getElementById('explanationText').textContent = q.explanation;
+  } else {
+    exBox.style.display = 'none';
+  }
+}
+
+function selectAnswer(index) {
+  if (myState.phase !== 'question') return;
+  if (myState.myAnswer !== undefined) return;
+  if (myState.eliminatedAnswers && myState.eliminatedAnswers.includes(index)) return;
+  socket.emit('answer', { index });
+}
+
+function renderGameOver(s) {
+  document.getElementById('prizeLadder').classList.add('hidden');
+  show('s-gameover');
+  const elim = s.myEliminated;
+  const icon = elim ? '🏅' : '🏆';
+  const title = elim ? 'You played well!' : 'Congratulations!';
+  const titleClass = elim ? 'elim' : 'won';
+  const msg = elim
+    ? 'You were eliminated during the game — but you still completed the training! Keep those lessons in mind.'
+    : 'You made it through all 10 questions without a wrong answer! Outstanding fraud awareness!';
+
+  document.getElementById('goIcon').textContent = icon;
+  document.getElementById('goTitle').textContent = title;
+  document.getElementById('goTitle').className = 'go-title ' + titleClass;
+  document.getElementById('goMsg').textContent = msg;
+  const prizeEl = document.getElementById('goPrize');
+  if (!elim) {
+    prizeEl.style.display = 'block';
+    prizeEl.textContent = '£1,000,000';
+  } else {
+    prizeEl.style.display = 'none';
+  }
+}
+</script>
+</body>
+</html>

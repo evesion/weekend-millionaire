@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>GM Dashboard — Weekend Millionaire</title>
+<script src="/socket.io/socket.io.js"></script>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  :root{
+    --gold:#f5c518;--gold2:#e8a000;--bg:#060616;--panel:rgba(255,255,255,0.04);
+    --border:rgba(255,255,255,0.1);--text:#e0e0e0;--dim:#777;--green:#27ae60;--red:#c0392b;
+  }
+  html,body{height:100%;background:var(--bg);color:var(--text);font-family:'Segoe UI',Arial,sans-serif;overflow:hidden}
+  body{display:flex;flex-direction:column;background:radial-gradient(ellipse at 50% -20%,#0d0d38 0%,var(--bg) 60%)}
+
+  /* TOPBAR */
+  #topbar{
+    height:52px;background:rgba(0,0,0,0.5);border-bottom:1px solid var(--border);
+    display:flex;align-items:center;padding:0 18px;gap:16px;flex-shrink:0;z-index:100
+  }
+  .tb-logo{font-size:16px;font-weight:900;letter-spacing:1px;
+    background:linear-gradient(135deg,var(--gold),#ff9500);-webkit-background-clip:text;
+    -webkit-text-fill-color:transparent;background-clip:text}
+  .tb-badge{border-radius:50px;padding:4px 12px;font-size:12px;font-weight:700;letter-spacing:1px;
+    border:1px solid;text-transform:uppercase}
+  .phase-badge{background:rgba(245,197,24,0.12);border-color:rgba(245,197,24,0.4);color:var(--gold)}
+  .phase-badge.lobby{background:rgba(100,100,100,0.15);border-color:#555;color:#888}
+  .phase-badge.question{background:rgba(41,174,96,0.15);border-color:rgba(41,174,96,0.4);color:#4dcc78}
+  .phase-badge.revealed{background:rgba(52,152,219,0.15);border-color:rgba(52,152,219,0.4);color:#74b9ff}
+  .phase-badge.gameover{background:rgba(245,197,24,0.2);border-color:var(--gold);color:var(--gold)}
+  .tb-spacer{flex:1}
+  .tb-qinfo{color:var(--dim);font-size:13px}
+  .btn{border:none;border-radius:8px;padding:8px 16px;font-size:13px;font-weight:600;
+    cursor:pointer;transition:.2s;display:inline-flex;align-items:center;gap:6px}
+  .btn:active{transform:scale(0.97)}
+  .btn-primary{background:linear-gradient(135deg,var(--gold),var(--gold2));color:#000}
+  .btn-secondary{background:rgba(255,255,255,0.08);color:var(--text);border:1px solid var(--border)}
+  .btn-secondary:hover{background:rgba(255,255,255,0.14)}
+  .btn-danger{background:rgba(192,57,43,0.25);color:#ff9999;border:1px solid rgba(192,57,43,0.4)}
+  .btn-green{background:rgba(39,174,96,0.25);color:#4dcc78;border:1px solid rgba(39,174,96,0.4)}
+  .btn:disabled{opacity:.35;cursor:not-allowed;transform:none}
+
+  /* MAIN LAYOUT */
+  #main{flex:1;display:grid;grid-template-columns:320px 1fr;overflow:hidden}
+
+  /* LEFT PANEL — players */
+  #left{border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
+  .panel-hdr{padding:12px 16px;font-size:11px;letter-spacing:2px;text-transform:uppercase;
+    color:var(--dim);border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;flex-shrink:0}
+  .panel-hdr span{color:var(--gold);font-weight:700}
+  #playerGrid{flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:8px}
+  .player-card{background:var(--panel);border:1px solid var(--border);border-radius:12px;
+    padding:12px 14px;display:flex;align-items:center;gap:10px;transition:.3s;position:relative}
+  .player-card.answered{border-color:rgba(245,197,24,0.3);background:rgba(245,197,24,0.04)}
+  .player-card.eliminated{opacity:.7}
+  .pc-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+  .pc-dot.online{background:#27ae60}
+  .pc-dot.offline{background:#555}
+  .pc-name{font-weight:600;font-size:14px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .pc-status{font-size:18px;flex-shrink:0}
+  .pc-meta{font-size:11px;color:var(--dim);margin-top:2px}
+  .pc-elim{font-size:10px;background:rgba(255,107,107,0.15);border:1px solid rgba(255,107,107,0.3);
+    border-radius:50px;padding:2px 8px;color:#ff9999;margin-top:4px;display:inline-block}
+  .pc-col{display:flex;flex-direction:column}
+  .no-players{text-align:center;color:var(--dim);font-size:13px;padding:24px;line-height:1.8}
+
+  /* RIGHT PANEL — question & controls */
+  #right{display:flex;flex-direction:column;overflow:hidden}
+  #controls{padding:12px 16px;border-bottom:1px solid var(--border);
+    display:flex;gap:8px;flex-wrap:wrap;flex-shrink:0;align-items:center}
+  #qpanel{flex:1;overflow-y:auto;padding:16px;display:flex;gap:16px}
+
+  .q-card{flex:1;display:flex;flex-direction:column;gap:12px}
+  .q-meta{display:flex;gap:8px;align-items:center}
+  .prize-tag{background:linear-gradient(135deg,rgba(245,197,24,0.15),rgba(245,197,24,0.05));
+    border:1px solid rgba(245,197,24,0.4);border-radius:50px;padding:4px 16px;
+    color:var(--gold);font-weight:900;font-size:18px}
+  .diff-tag{color:var(--dim);font-size:12px;letter-spacing:1px}
+  .q-text{background:var(--panel);border:1px solid var(--border);border-radius:12px;
+    padding:16px;font-size:15px;font-weight:600;line-height:1.6;color:#fff}
+  .answers-grid{display:flex;flex-direction:column;gap:8px}
+  .gm-ans{background:var(--panel);border:1px solid var(--border);border-radius:10px;
+    padding:12px 14px;display:flex;align-items:center;gap:10px}
+  .gm-ans.correct-ans{background:rgba(39,174,96,0.15);border-color:rgba(77,255,128,0.4)}
+  .gm-ans.wrong-ans{opacity:.6}
+  .gm-ans.elim-ans{opacity:.2}
+  .ans-ltr{width:28px;height:28px;border-radius:50%;background:rgba(245,197,24,0.12);
+    border:1px solid rgba(245,197,24,0.3);display:flex;align-items:center;justify-content:center;
+    font-weight:700;color:var(--gold);font-size:12px;flex-shrink:0}
+  .ans-body{flex:1}
+  .ans-txt{font-size:13px;color:var(--text);line-height:1.4}
+  .ans-bar-wrap{margin-top:5px;height:6px;background:rgba(255,255,255,0.08);border-radius:20px;overflow:hidden}
+  .ans-bar{height:100%;background:var(--gold);border-radius:20px;transition:width .5s ease;min-width:0}
+  .ans-bar.correct-bar{background:#27ae60}
+  .ans-pct{font-size:11px;color:var(--dim);margin-top:2px}
+  .correct-star{color:#4dff80;font-size:16px;flex-shrink:0}
+  .explanation{background:rgba(52,152,219,0.08);border:1px solid rgba(52,152,219,0.2);
+    border-radius:10px;padding:12px;font-size:13px;color:#aed6f1;line-height:1.7}
+  .expln-label{color:#74b9ff;font-weight:700;font-size:11px;letter-spacing:1px;
+    text-transform:uppercase;margin-bottom:4px}
+
+  /* Right-side ladder */
+  #ladder{width:120px;flex-shrink:0;display:flex;flex-direction:column;gap:3px;justify-content:center;padding:8px}
+  .lad-item{font-size:11px;padding:4px 8px;border-radius:5px;display:flex;justify-content:space-between;
+    gap:6px;color:#444;border:1px solid transparent;transition:.3s}
+  .lad-item.current{background:linear-gradient(90deg,var(--gold),var(--gold2));color:#000;font-weight:700}
+  .lad-item.done{color:rgba(245,197,24,0.45)}
+  .lad-item.safe{color:rgba(77,255,128,0.5);border-color:rgba(77,255,128,0.12)}
+
+  /* Lifelines */
+  .ll-btn{border-radius:50px;padding:6px 14px;font-size:12px;font-weight:700;cursor:pointer;
+    display:inline-flex;align-items:center;gap:5px;border:1px solid;transition:.2s}
+  .ll-btn:active{transform:scale(0.97)}
+  .ll-fifty{background:rgba(245,197,24,0.12);border-color:rgba(245,197,24,0.4);color:var(--gold)}
+  .ll-team{background:rgba(52,152,219,0.12);border-color:rgba(52,152,219,0.4);color:#74b9ff}
+  .ll-expert{background:rgba(155,89,182,0.12);border-color:rgba(155,89,182,0.4);color:#c39bd3}
+  .ll-btn.used{opacity:.3;cursor:not-allowed;text-decoration:line-through;transform:none}
+
+  /* Expert hint */
+  .expert-hint{background:rgba(155,89,182,0.08);border:1px solid rgba(155,89,182,0.25);
+    border-radius:10px;padding:12px;font-size:13px;color:#d7bde2;line-height:1.7;margin-top:8px}
+
+  /* Lobby state */
+  #lobby-panel{display:none;flex:1;align-items:center;justify-content:center;flex-direction:column;gap:16px;padding:24px;text-align:center}
+  #lobby-panel.visible{display:flex}
+
+  /* Answer reveal badges on player cards */
+  .pc-ans-badge{position:absolute;right:10px;top:10px;font-size:11px;border-radius:50px;
+    padding:2px 8px;font-weight:700}
+  .pc-ans-badge.correct-badge{background:rgba(39,174,96,0.2);color:#4dcc78;border:1px solid rgba(39,174,96,0.4)}
+  .pc-ans-badge.wrong-badge{background:rgba(192,57,43,0.2);color:#ff9999;border:1px solid rgba(192,57,43,0.4)}
+
+  /* Answered count */
+  .answered-count{font-size:12px;color:var(--dim);padding:0 4px}
+  .answered-count b{color:var(--gold)}
+
+  /* Scrollbar */
+  ::-webkit-scrollbar{width:4px}::-webkit-scrollbar-track{background:transparent}
+  ::-webkit-scrollbar-thumb{background:#333;border-radius:2px}
+
+  /* Lobby big start */
+  .start-card{background:var(--panel);border:1px solid var(--border);border-radius:20px;
+    padding:32px;max-width:420px;width:100%;display:flex;flex-direction:column;gap:16px;align-items:center}
+  .start-card h2{font-size:22px;font-weight:700}
+  .start-card p{color:var(--dim);font-size:14px;line-height:1.7;text-align:center}
+  .big-start{font-size:18px!important;padding:16px 40px!important;border-radius:50px!important}
+
+  .sep{width:1px;height:24px;background:var(--border);margin:0 4px}
+</style>
+</head>
+<body>
+
+<!-- TOPBAR -->
+<div id="topbar">
+  <div class="tb-logo">👑 GM DASHBOARD</div>
+  <div class="tb-badge phase-badge lobby" id="phaseBadge">LOBBY</div>
+  <div class="tb-spacer"></div>
+  <div class="tb-qinfo" id="tbQInfo">Waiting to start...</div>
+  <button class="btn btn-danger" onclick="gmAction('reset')" style="margin-left:8px">⟲ Reset</button>
+</div>
+
+<!-- MAIN -->
+<div id="main">
+
+  <!-- LEFT: players -->
+  <div id="left">
+    <div class="panel-hdr">
+      Players <span id="playerCount">0/10</span>
+    </div>
+    <div id="playerGrid">
+      <div class="no-players">No players yet.<br/>Share the URL with your team.</div>
+    </div>
+  </div>
+
+  <!-- RIGHT: question + controls -->
+  <div id="right">
+
+    <!-- Controls -->
+    <div id="controls">
+      <button class="btn btn-primary" id="btnStart" onclick="gmAction('start')" disabled>▶ Start Game</button>
+      <div class="sep"></div>
+      <button class="btn btn-green" id="btnShowQ" onclick="gmAction('show_question')" disabled>⤵ Show Question</button>
+      <button class="btn btn-primary" id="btnReveal" onclick="gmAction('reveal')" disabled>🔍 Reveal Answer</button>
+      <button class="btn btn-secondary" id="btnPresent" onclick="gmAction('presentation')" disabled>🎬 Presentation Mode</button>
+      <div class="sep"></div>
+      <button class="ll-btn ll-fifty" id="ll-fifty" onclick="gmAction('lifeline',{type:'fifty'})">½ 50/50</button>
+      <button class="ll-btn ll-team" id="ll-team" onclick="gmAction('lifeline',{type:'team'})">👥 Ask Team</button>
+      <button class="ll-btn ll-expert" id="ll-expert" onclick="gmAction('lifeline',{type:'expert'})">📞 Expert</button>
+      <div class="sep"></div>
+      <div class="answered-count" id="answeredCount"></div>
+    </div>
+
+    <!-- Content area -->
+    <div id="qpanel">
+
+      <!-- Lobby overlay -->
+      <div id="lobby-panel" class="visible">
+        <div class="start-card">
+          <div style="font-size:48px">🎮</div>
+          <h2>Ready to train?</h2>
+          <p>Players join at your server URL by entering their name.<br/>When everyone has joined, press Start Game.</p>
+          <p style="color:#555;font-size:12px">GM Dashboard — /gm | Player URL — /</p>
+          <button class="btn btn-primary big-start" id="lobbyStartBtn" onclick="gmAction('start')" disabled>▶ START GAME</button>
+        </div>
+      </div>
+
+      <!-- Question panel (hidden until game starts) -->
+      <div class="q-card" id="qCard" style="display:none">
+        <div class="q-meta">
+          <div class="prize-tag" id="qPrize">—</div>
+          <div class="diff-tag" id="qDiff">—</div>
+        </div>
+        <div class="q-text" id="qText">—</div>
+        <div class="answers-grid" id="answersGrid"></div>
+        <div class="explanation" id="explBox" style="display:none">
+          <div class="expln-label">💡 Explanation</div>
+          <div id="explText"></div>
+        </div>
+        <div class="expert-hint" id="expertBox" style="display:none"></div>
+      </div>
+
+      <!-- Ladder -->
+      <div id="ladder"></div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+const socket = io();
+const LETTERS = ['A','B','C','D'];
+const EXPERT_HINTS = [
+  'Think about what the customer needs EMOTIONALLY first — before any process step.',
+  'The key word is "stupid" — what response would most effectively challenge that belief?',
+  'Time is the critical factor here. What action has the shortest window for success?',
+  'Think about what NO legitimate organisation ever asks a customer to do. Ever.',
+  'Scripted answers break under open-ended questions. What technique does this suggest?',
+  'Each payment type has a different legal protection pathway. Which fits debit card purchases?',
+  'Think mandatory vs voluntary. A big regulatory change happened in October 2024.',
+  'Trauma and denial work together. Direct confrontation often makes victims more defensive.',
+  'This is a safeguarding moment, not a service moment. What is the correct protocol?',
+  'Think about who is ACTUALLY most commonly victimised — and what the main barrier to reporting is.',
+];
+
+let gmData = {};
+let expertUsedIndex = -1;
+
+socket.emit('gm_connect');
+socket.on('gm_state', data => {
+  gmData = data;
+  renderGM(data);
+});
+socket.on('reset', () => {
+  socket.emit('gm_connect');
+});
+
+function gmAction(action, payload = {}) {
+  socket.emit('gm', { action, payload });
+}
+
+function renderGM(d) {
+  updateTopbar(d);
+  updateControls(d);
+  updatePlayers(d);
+  updateQuestion(d);
+  updateLadder(d);
+}
+
+function updateTopbar(d) {
+  const badge = document.getElementById('phaseBadge');
+  const labels = { lobby:'LOBBY', presentation:'PRESENTING', question:'QUESTION LIVE', revealed:'REVEALED', gameover:'GAME OVER' };
+  badge.textContent = labels[d.phase] || d.phase.toUpperCase();
+  badge.className = `tb-badge phase-badge ${d.phase}`;
+  const qi = d.questionIndex;
+  const qText = qi >= 0 ? `Q${qi+1}/${d.totalQuestions} · ${d.prizes?.[qi] || ''}` : 'Not started';
+  document.getElementById('tbQInfo').textContent = qText;
+}
+
+function updateControls(d) {
+  const p = d.phase;
+  const qi = d.questionIndex;
+  const hasQ = qi >= 0 && qi < d.totalQuestions;
+
+  setBtn('btnStart', p === 'lobby' && playerCount(d) > 0);
+  document.getElementById('lobbyStartBtn').disabled = !(p === 'lobby' && playerCount(d) > 0);
+  setBtn('btnShowQ', p === 'presentation' || (p === 'revealed' && qi < d.totalQuestions - 1));
+  setBtn('btnReveal', p === 'question');
+  setBtn('btnPresent', p === 'revealed' || p === 'question');
+
+  const ll = d.lifelines || {};
+  setLL('ll-fifty', !ll.fifty && p === 'question');
+  setLL('ll-team', !ll.team && p === 'question');
+  setLL('ll-expert', !ll.expert && p === 'question');
+  if (ll.fifty) document.getElementById('ll-fifty').classList.add('used');
+  else document.getElementById('ll-fifty').classList.remove('used');
+  if (ll.team) document.getElementById('ll-team').classList.add('used');
+  else document.getElementById('ll-team').classList.remove('used');
+  if (ll.expert) document.getElementById('ll-expert').classList.add('used');
+  else document.getElementById('ll-expert').classList.remove('used');
+
+  // Answered count
+  const ac = document.getElementById('answeredCount');
+  if (p === 'question' || p === 'revealed') {
+    const total = (d.players||[]).length;
+    const answered = (d.players||[]).filter(pl => pl.answered).length;
+    ac.innerHTML = `<b>${answered}</b>/${total} answered`;
+  } else {
+    ac.innerHTML = '';
+  }
+}
+
+function setBtn(id, enabled) {
+  document.getElementById(id).disabled = !enabled;
+}
+function setLL(id, enabled) {
+  // ll-btn handled by .used class — just enable/disable click
+  const el = document.getElementById(id);
+  el.style.pointerEvents = enabled ? 'auto' : 'none';
+}
+
+function playerCount(d) {
+  return (d.players || []).length;
+}
+
+function updatePlayers(d) {
+  const grid = document.getElementById('playerGrid');
+  document.getElementById('playerCount').textContent = `${playerCount(d)}/10`;
+
+  if (!d.players || d.players.length === 0) {
+    grid.innerHTML = '<div class="no-players">No players yet.<br/>Share the URL with your team.</div>';
+    return;
+  }
+
+  const qi = d.questionIndex;
+  const hasQ = qi >= 0 && d.question;
+  const correctIdx = hasQ ? d.question.correctIndex : -1;
+  const isRevealed = d.phase === 'revealed';
+
+  grid.innerHTML = d.players.map(pl => {
+    let statusIcon = '⏳';
+    let answeredBadge = '';
+    if (pl.answered) {
+      if (isRevealed) {
+        const wasCorrect = pl.answer === correctIdx;
+        statusIcon = wasCorrect ? '✅' : '❌';
+        answeredBadge = wasCorrect
+          ? `<div class="pc-ans-badge correct-badge">${LETTERS[pl.answer]} ✓</div>`
+          : `<div class="pc-ans-badge wrong-badge">${LETTERS[pl.answer]} ✗</div>`;
+      } else {
+        statusIcon = '🔒';
+      }
+    }
+    const elimHtml = pl.eliminated ? '<div class="pc-elim">ELIMINATED</div>' : '';
+    return `<div class="player-card ${pl.answered?'answered':''} ${pl.eliminated?'eliminated':''}">
+      <div class="pc-dot ${pl.connected?'online':'offline'}"></div>
+      <div class="pc-col">
+        <div class="pc-name">${escHtml(pl.name)}</div>
+        <div class="pc-meta">✔ ${pl.correctCount || 0} correct${!pl.connected?' · offline':''}</div>
+        ${elimHtml}
+      </div>
+      <div class="pc-status">${statusIcon}</div>
+      ${answeredBadge}
+    </div>`;
+  }).join('');
+}
+
+function updateQuestion(d) {
+  const lp = document.getElementById('lobby-panel');
+  const qc = document.getElementById('qCard');
+
+  if (d.phase === 'lobby') {
+    lp.classList.add('visible'); qc.style.display = 'none'; return;
+  }
+  lp.classList.remove('visible'); qc.style.display = 'flex';
+
+  if (!d.question) {
+    document.getElementById('qText').textContent = 'Use "Show Question" when ready.';
+    document.getElementById('qPrize').textContent = '—';
+    document.getElementById('qDiff').textContent = d.phase === 'presentation' ? '🎬 Presentation Mode' : '—';
+    document.getElementById('answersGrid').innerHTML = '';
+    document.getElementById('explBox').style.display = 'none';
+    document.getElementById('expertBox').style.display = 'none';
+    return;
+  }
+
+  const q = d.question;
+  document.getElementById('qPrize').textContent = q.prize;
+  document.getElementById('qDiff').textContent = q.difficulty;
+  document.getElementById('qText').textContent = q.question;
+
+  const isRevealed = d.phase === 'revealed';
+  const breakdown = q.breakdown;
+  const ll = d.lifelines || {};
+
+  document.getElementById('answersGrid').innerHTML = q.answers.map(a => {
+    const i = a.index;
+    const isCorrect = a.correct;
+    const isElim = (d.eliminatedAnswers || []).includes(i);
+    let cls = 'gm-ans';
+    if (isElim) cls += ' elim-ans';
+    else if (isRevealed && isCorrect) cls += ' correct-ans';
+    else if (isRevealed && !isCorrect) cls += ' wrong-ans';
+
+    const bd = breakdown ? breakdown[i] : null;
+    const showBreakdown = (isRevealed || ll.team) && bd;
+    const barCls = isCorrect && isRevealed ? 'correct-bar' : '';
+    const barHtml = showBreakdown
+      ? `<div class="ans-bar-wrap"><div class="ans-bar ${barCls}" style="width:${bd.pct}%"></div></div>
+         <div class="ans-pct">${bd.pct}% (${bd.count} player${bd.count!==1?'s':''})</div>`
+      : '';
+
+    const star = (isRevealed && isCorrect) ? `<div class="correct-star">★</div>` : '';
+    return `<div class="${cls}">
+      <div class="ans-ltr">${LETTERS[i]}</div>
+      <div class="ans-body">
+        <div class="ans-txt">${escHtml(a.text)}</div>
+        ${barHtml}
+      </div>
+      ${star}
+    </div>`;
+  }).join('');
+
+  // Explanation
+  const eb = document.getElementById('explBox');
+  if (isRevealed && q.explanation) {
+    eb.style.display = 'block';
+    document.getElementById('explText').textContent = q.explanation;
+  } else {
+    eb.style.display = 'none';
+  }
+
+  // Expert hint
+  const xb = document.getElementById('expertBox');
+  if (ll.expert) {
+    const hint = EXPERT_HINTS[d.questionIndex] || 'Think carefully about the customer\'s emotional state first.';
+    const ci = q.correctIndex;
+    xb.style.display = 'block';
+    xb.innerHTML = `<strong style="color:#c39bd3">📞 Expert Hint (GM only):</strong><br/>"${hint}"<br/><br/>
+      <span style="color:#d7bde2">✅ Correct answer: <strong>${LETTERS[ci]}</strong></span>`;
+  } else {
+    xb.style.display = 'none';
+  }
+}
+
+function updateLadder(d) {
+  const prizes = d.prizes;
+  if (!prizes) return;
+  const rev = [...prizes].reverse();
+  const qi = d.questionIndex;
+  document.getElementById('ladder').innerHTML = rev.map((p, i) => {
+    const qn = prizes.length - i;
+    const isCurrent = qn === qi + 1;
+    const isDone = qn <= qi;
+    const isSafe = qn === 5;
+    let cls = 'lad-item';
+    if (isCurrent) cls += ' current';
+    else if (isDone) cls += ' done';
+    else if (isSafe) cls += ' safe';
+    return `<div class="${cls}"><span>${qn}</span><span>${p}</span></div>`;
+  }).join('');
+}
+
+function escHtml(s) {
+  return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+</script>
+</body>
+</html>
