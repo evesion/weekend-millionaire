@@ -172,6 +172,7 @@ function playerStateFor(name) {
     playerCount: Object.keys(G.players).length,
     myEliminated: p ? p.eliminated : false,
     myAnswer: p ? p.answers[G.questionIndex] : undefined,
+    slideIndex: G.presentSlide,
     question: q ? {
       id: q.id, prize: q.prize, difficulty: q.difficulty, question: q.question,
       answers: q.answers.map((a, i) => ({ text: a.text, index: i })),
@@ -246,6 +247,7 @@ io.on('connection', socket => {
     G.presentSlide = Math.max(0, Math.min(SLIDE_COUNT - 1, index));
     io.to('present').emit('slide', { index: G.presentSlide, total: SLIDE_COUNT });
     broadcastGM();
+    if (G.phase === 'presentation') broadcastPlayers();
   });
 
   // ── PLAYER JOIN ──
@@ -341,6 +343,7 @@ io.on('connection', socket => {
         G.presentSlide = Math.max(0, Math.min(SLIDE_COUNT - 1, index));
         io.to('present').emit('slide', { index: G.presentSlide, total: SLIDE_COUNT });
         broadcastGM();
+        if (G.phase === 'presentation') broadcastPlayers();
       }
 
     } else if (action === 'reset') {
